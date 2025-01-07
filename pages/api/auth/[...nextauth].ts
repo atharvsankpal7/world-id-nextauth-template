@@ -1,9 +1,8 @@
 import NextAuth, { NextAuthOptions } from "next-auth";
+import dbConnect from "../../../lib/db";
+import User from "../../../models/User";
 
-// For more information on each option (and a full list of options) go to
-// https://next-auth.js.org/configuration/options
 export const authOptions: NextAuthOptions = {
-  // https://next-auth.js.org/configuration/providers/oauth
   providers: [
     {
       id: "worldcoin",
@@ -19,19 +18,35 @@ export const authOptions: NextAuthOptions = {
         return {
           id: profile.sub,
           name: profile.sub,
-          verificationLevel:
-            profile["https://id.worldcoin.org/v1"].verification_level,
+          verificationLevel: profile["https://id.worldcoin.org/v1"].verification_level,
         };
       },
     },
   ],
   callbacks: {
-    async jwt({ token }) {
-      token.userRole = "admin";
-      return token;
+    async signIn({ user, account }) {
+      if (account?.provider === "worldcoin") {
+        await dbConnect();
+        const existingUser = await User.findOne({ worldId: user.id });
+        
+        if (!existingUser) {
+          // New user needs to complete registration
+          return `/register?worldId=${user.id}`;
+        }
+        return true;
+      }
+      return false;
+    },
+    async session({ session, token }) {
+      if (session?.user) {
+        await dbConnect();
+        const user = await User.findOne({ worldId: token.sub });
+        session.user.role = user?.role;
+        session.user.id = user?._id;
+      }
+      return session;
     },
   },
-  debug: true,
 };
 
 export default NextAuth(authOptions);
